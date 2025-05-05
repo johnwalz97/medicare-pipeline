@@ -1,33 +1,30 @@
 # Medicare Data Pipeline Documentation
 
-This document provides an overview and details of the Medicare data pipeline, derived from the `validation_results.json` and the transformation logic found in `src/medicare_pipeline/`.
+This document details the Medicare data pipeline, covering its structure, transformations, and data characteristics across the Bronze, Silver, and Gold layers. Information is sourced from `validation_results.json` and analysis of the transformation logic in `src/medicare_pipeline/`.
 
 ## Pipeline Overview
 
-The pipeline processes Medicare claims data through three distinct layers: Bronze, Silver, and Gold.
+The pipeline processes Medicare claims data through three standard layers: Bronze, Silver, and Gold.
 
-1. **Bronze Layer**: Contains the raw data ingested from source files, typically in Parquet format. Minimal cleaning or transformation is applied at this stage. The data is partitioned by year and `bene_id_prefix`.
-2. **Silver Layer**: Represents a cleaned and transformed version of the bronze data, structured into a dimensional model. This layer serves as a reliable source for analytical queries. It includes dimension tables (`dim_beneficiary`, `dim_provider`) and fact tables (`fact_claims`, `fact_claim_diagnoses`, `fact_prescription`). Data is partitioned for efficient querying.
-3. **Gold Layer**: Contains aggregated analytical views derived from the silver layer, tailored for specific business intelligence or reporting needs.
+1. **Bronze Layer**: Stores the raw ingested data in Parquet format with minimal alterations. Data is partitioned by `year` and `bene_id_prefix`.
+2. **Silver Layer**: Contains cleaned and dimensionally modeled data derived from the Bronze layer. This layer provides a structured and reliable source for analytics, featuring dimension tables (`dim_beneficiary`, `dim_provider`) and fact tables (`fact_claims`, `fact_claim_diagnoses`, `fact_prescription`). Data is partitioned for query optimization.
+3. **Gold Layer**: Consists of aggregated analytical views built upon the Silver layer, designed for specific business intelligence and reporting requirements.
 
 ---
 
 ## Bronze Layer
 
-Raw, partitioned data as ingested.
+The Bronze layer holds the initial, raw data ingested from source systems.
 
-**Status**: `valid`
 **Total Tables**: 5
 **Total Rows**: 134,929
-**Issues**: None
 
 ### Tables
 
 #### 1. `inpatient`
 
 * **Description**: Raw inpatient claims data.
-* **Total Files**: 256 (3 sampled)
-* **Row Count**: 803 (from sampled files)
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (84 columns)
   * `DESYNPUF_ID`: String (Beneficiary ID)
   * `CLM_ID`: String (Claim ID)
@@ -66,8 +63,7 @@ Raw, partitioned data as ingested.
 #### 2. `outpatient`
 
 * **Description**: Raw outpatient claims data.
-* **Total Files**: 256 (3 sampled)
-* **Row Count**: 8,871 (from sampled files)
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (79 columns)
   * `DESYNPUF_ID`: String
   * `CLM_ID`: String
@@ -100,9 +96,8 @@ Raw, partitioned data as ingested.
 
 #### 3. `beneficiary`
 
-* **Description**: Raw beneficiary summary data, typically one record per beneficiary per year.
-* **Total Files**: 768 (3 sampled)
-* **Row Count**: 1,255 (from sampled files)
+* **Description**: Raw beneficiary summary data, containing demographics and annual payment summaries.
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (35 columns)
   * `DESYNPUF_ID`: String
   * `BENE_BIRTH_DT`: Date
@@ -133,9 +128,8 @@ Raw, partitioned data as ingested.
 
 #### 4. `carrier`
 
-* **Description**: Raw carrier (physician/supplier Part B) claims data. Often contains multiple line items per claim.
-* **Total Files**: 257 (3 sampled)
-* **Row Count**: 58,119 (from sampled files)
+* **Description**: Raw carrier (physician/supplier Part B) claims data, including line-level details.
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (145 columns)
   * `DESYNPUF_ID`: String
   * `CLM_ID`: String
@@ -166,8 +160,7 @@ Raw, partitioned data as ingested.
 #### 5. `pde`
 
 * **Description**: Raw Prescription Drug Event (PDE) data (Part D).
-* **Total Files**: 256 (3 sampled)
-* **Row Count**: 65,881 (from sampled files)
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (11 columns)
   * `DESYNPUF_ID`: String
   * `PDE_ID`: Int64 (Prescription Drug Event ID)
@@ -192,23 +185,21 @@ Raw, partitioned data as ingested.
 
 ## Silver Layer
 
-Cleaned, transformed data structured into a dimensional model.
+The Silver layer provides a cleaned, integrated, and dimensionally modeled view of the Medicare data.
 
-**Status**: `valid`
 **Total Tables**: 5
 **Total Rows**: 592,952
-**Issues**: None
 
 ### Tables
 
 #### 1. `dim_beneficiary`
 
-* **Description**: Dimension table containing beneficiary demographics and annual summary spending metrics. Derived primarily from the bronze `beneficiary` table.
-* **Transformation**: Renames columns, calculates total payment amounts (`total_medicare_payment`, `total_beneficiary_payment`, `total_third_party_payment`, `total_allowed`, `total_paid`) by summing payments across IP, OP, and Carrier claims from the bronze beneficiary summary file.
-* **Total Files**: 1 (1 sampled)
-* **Row Count**: 343,644
+* **Description**: Dimension table storing beneficiary demographics and calculated annual spending totals. It serves as the central dimension for member-related analysis.
+* **Transformation Source**: Bronze `beneficiary`.
+* **Transformation Logic**: Renames source columns for clarity (e.g., `DESYNPUF_ID` to `bene_id`). Calculates aggregate payment fields (`total_medicare_payment`, `total_beneficiary_payment`, `total_third_party_payment`, `total_allowed`, `total_paid`) by summing the corresponding IP, OP, and Carrier payment columns from the source.
+* **Partitioning**: Not partitioned (written as a single file).
 * **Schema**: (40 columns)
-  * `bene_id`: String (Renamed from `DESYNPUF_ID`)
+  * `bene_id`: String
   * `birth_date`: Date
   * `death_date`: Date
   * `gender`: Categorical
@@ -248,10 +239,10 @@ Cleaned, transformed data structured into a dimensional model.
 
 #### 2. `dim_provider`
 
-* **Description**: Dimension table containing unique provider identifiers and associated state/type. Derived by extracting and deduplicating provider IDs from bronze `inpatient`, `outpatient`, `carrier`, and `pde` tables.
-* **Transformation**: Extracts various provider ID columns (`PRVDR_NUM`, `AT_PHYSN_NPI`, `OP_PHYSN_NPI`, `OT_PHYSN_NPI`, `PRVDR_NPI`, `PRVDR_ID`, `PRSCRBR_ID`) from claims and PDE files. Deduplicates by `provider_id` and attempts to determine the most common state. Provider type is currently set to "Unknown".
-* **Total Files**: 1 (1 sampled)
-* **Row Count**: 139,094
+* **Description**: Dimension table containing unique provider identifiers.
+* **Transformation Source**: Bronze `inpatient`, `outpatient`, `carrier`, `pde`.
+* **Transformation Logic**: Extracts provider IDs from various columns across source tables (`PRVDR_NUM`, NPI columns, `PRVDR_ID`, `PRSCRBR_ID`). Deduplicates based on `provider_id`. State information is associated where available; otherwise, it's 'Unknown'. Provider type is currently 'Unknown'.
+* **Partitioning**: Not partitioned (written as a single file).
 * **Schema**: (3 columns)
   * `provider_id`: String
   * `state`: String
@@ -264,14 +255,14 @@ Cleaned, transformed data structured into a dimensional model.
 
 #### 3. `fact_claims`
 
-* **Description**: Fact table unifying all claim types (`inpatient`, `outpatient`, `carrier`) from the bronze layer.
-* **Transformation**: Combines selected columns from bronze `inpatient`, `outpatient`, and `carrier` tables. Adds a `claim_type` column. Standardizes column names (`DESYNPUF_ID` -> `bene_id`, `CLM_ID` -> `claim_id`, etc.). Calculates `medicare_payment`, `third_party_payment`, and `patient_payment` (patient payment is often derived or set to 0 if not directly available). Calculates `total_payment` as the sum of the three payment types. Partitioned by `year` and `bene_id_prefix`.
-* **Total Files**: 385 (3 sampled)
-* **Row Count**: 10,500 (from sampled files)
+* **Description**: Unified fact table containing key information for all claim types.
+* **Transformation Source**: Bronze `inpatient`, `outpatient`, `carrier`.
+* **Transformation Logic**: Selects and renames columns from source tables to create a consistent structure. Assigns `claim_type` ('inpatient', 'outpatient', 'carrier'). Calculates `total_payment` by summing `medicare_payment`, `third_party_payment`, and `patient_payment`. Carrier claim payments (`medicare_payment`, `third_party_payment`) are summed from line-level columns if the claim-level amount (`CLM_PMT_AMT`) is unavailable.
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (12 columns)
   * `bene_id`: String
   * `claim_id`: String
-  * `claim_type`: String ('inpatient', 'outpatient', 'carrier')
+  * `claim_type`: String
   * `claim_from_date`: Date
   * `claim_thru_date`: Date
   * `provider_id`: String
@@ -291,10 +282,10 @@ Cleaned, transformed data structured into a dimensional model.
 
 #### 4. `fact_claim_diagnoses`
 
-* **Description**: Fact table containing claim diagnosis information in a long format (one row per diagnosis per claim).
-* **Transformation**: Extracts diagnosis codes (`ICD9_DGNS_CD_*`) from bronze `inpatient`, `outpatient`, and `carrier` tables. Unpivots the wide diagnosis columns into a long format, creating `diagnosis_code` and `diagnosis_position` columns. Maps `diagnosis_code` to a simplified `diagnosis_description` using a predefined mapping (e.g., first 3 digits). Includes `claim_id`, `bene_id`, `payment` (claim-level payment), `claim_type`, `year`, and `bene_id_prefix`. Partitioned by `year` and `bene_id_prefix`.
-* **Total Files**: 256 (3 sampled)
-* **Row Count**: 31,846 (from sampled files)
+* **Description**: Normalized fact table detailing diagnoses associated with claims.
+* **Transformation Source**: Bronze `inpatient`, `outpatient`, `carrier`.
+* **Transformation Logic**: Unpivots the multiple `ICD9_DGNS_CD_*` columns from source tables into a long format with one row per diagnosis. Creates `diagnosis_code` and `diagnosis_position`. Associates the claim-level payment (`CLM_PMT_AMT`) with each diagnosis row. Adds a simplified `diagnosis_description` based on a mapping of ICD-9 prefixes.
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (9 columns)
   * `bene_id`: String
   * `claim_id`: String
@@ -315,10 +306,10 @@ Cleaned, transformed data structured into a dimensional model.
 
 #### 5. `fact_prescription`
 
-* **Description**: Fact table containing prescription drug event details.
-* **Transformation**: Derived from the bronze `pde` table. Renames columns (`PDE_ID` -> `prescription_id`, `SRVC_DT` -> `service_date`, etc.). Identifies `product_id` (from `PROD_SRVC_ID`) and `provider_id` (from potential columns like `PRVDR_ID`, `PRSCRBR_ID`). Calculates `medicare_payment` (`total_cost` - `patient_payment`). Partitioned by `year` and `bene_id_prefix`.
-* **Total Files**: 256 (3 sampled)
-* **Row Count**: 67,868 (from sampled files)
+* **Description**: Fact table detailing prescription drug events.
+* **Transformation Source**: Bronze `pde`.
+* **Transformation Logic**: Selects and renames columns from the source PDE table. Identifies `product_id` (NDC) and `provider_id` (prescriber/pharmacy). Calculates `medicare_payment` as `total_cost` minus `patient_payment`.
+* **Partitioning**: `year`, `bene_id_prefix`
 * **Schema**: (12 columns)
   * `bene_id`: String
   * `prescription_id`: Int64
@@ -344,34 +335,32 @@ Cleaned, transformed data structured into a dimensional model.
 
 ## Gold Layer
 
-Aggregated analytical views for reporting and analysis.
+The Gold layer provides pre-aggregated, business-ready analytical views.
 
-**Status**: `valid`
 **Total Tables**: 3
 **Total Rows**: 2,693,072
-**Issues**: None
 
 ### Tables
 
 #### 1. `member_year_metrics`
 
-* **Description**: Aggregated metrics per beneficiary per year, combining demographic info with utilization and cost summaries.
-* **Transformation**: Joins `dim_beneficiary` with aggregated counts from `fact_claims` (counting distinct `claim_id` per `claim_type` to get `inpatient_stays`, `outpatient_visits`, `carrier_claims`; counting distinct `provider_id` for `unique_providers`) and `fact_prescription` (counting distinct `prescription_id` for `rx_fills`).
-* **Total Files**: 3 (3 sampled)
-* **Row Count**: 343,644
+* **Description**: Provides annual aggregated metrics for each beneficiary, including costs and utilization counts.
+* **Transformation Source**: Silver `dim_beneficiary`, `fact_claims`, `fact_prescription`.
+* **Transformation Logic**: Starts with `dim_beneficiary` for demographics and total payments. Joins aggregated counts from `fact_claims` (distinct `claim_id` per `claim_type` yields `inpatient_stays`, `outpatient_visits`, `carrier_claims`; distinct `provider_id` yields `unique_providers`) and `fact_prescription` (distinct `prescription_id` yields `rx_fills`).
+* **Partitioning**: `year`
 * **Schema**: (12 columns)
   * `bene_id`: String
   * `year`: Int32
-  * `total_allowed`: Decimal(38, 2) (From `dim_beneficiary`)
-  * `total_paid`: Decimal(38, 2) (From `dim_beneficiary`)
+  * `total_allowed`: Decimal(38, 2)
+  * `total_paid`: Decimal(38, 2)
   * `gender`: Categorical
   * `race`: Categorical
   * `state`: Categorical
-  * `inpatient_stays`: UInt32 (Aggregated count from `fact_claims`)
-  * `outpatient_visits`: UInt32 (Aggregated count from `fact_claims`)
-  * `carrier_claims`: UInt32 (Aggregated count from `fact_claims`)
-  * `unique_providers`: UInt32 (Aggregated count from `fact_claims`)
-  * `rx_fills`: UInt32 (Aggregated count from `fact_prescription`)
+  * `inpatient_stays`: UInt32 (Aggregated)
+  * `outpatient_visits`: UInt32 (Aggregated)
+  * `carrier_claims`: UInt32 (Aggregated)
+  * `unique_providers`: UInt32 (Aggregated)
+  * `rx_fills`: UInt32 (Aggregated)
 * **Sample Row**:
 
     ```json
@@ -382,17 +371,17 @@ Aggregated analytical views for reporting and analysis.
 
 #### 2. `top_diagnoses_by_member`
 
-* **Description**: Identifies the top diagnoses for each beneficiary per year based on the associated claim payment amount.
-* **Transformation**: Aggregates `fact_claim_diagnoses` by `bene_id`, `year`, `diagnosis_code`, and `diagnosis_description`, summing the `payment` (claim-level payment) for each diagnosis. Ranks these aggregated diagnoses within each `bene_id` and `year` based on the summed `diagnosis_payment`. (The validation output only shows rank 1, but the transformation likely calculates ranks).
-* **Total Files**: 1 (1 sampled, representing year 2008)
-* **Row Count**: 1,060,161 (for year 2008 sample)
+* **Description**: Ranks diagnoses for each beneficiary annually based on associated claim payments.
+* **Transformation Source**: Silver `fact_claim_diagnoses`.
+* **Transformation Logic**: Aggregates `fact_claim_diagnoses` by `bene_id`, `year`, `diagnosis_code`, and `diagnosis_description`, summing the claim-level `payment`. Ranks the results within each `bene_id` and `year` partition based on the summed `diagnosis_payment` in descending order.
+* **Partitioning**: `year`
 * **Schema**: (6 columns)
   * `bene_id`: String
   * `year`: Int32
   * `diagnosis_code`: String
   * `diagnosis_description`: String
-  * `diagnosis_payment`: Decimal(10, 2) (Aggregated payment for this diagnosis for the member-year)
-  * `diagnosis_rank`: UInt32 (Rank based on `diagnosis_payment`)
+  * `diagnosis_payment`: Decimal(10, 2) (Aggregated payment for this diagnosis)
+  * `diagnosis_rank`: UInt32 (Rank based on payment)
 * **Sample Row**:
 
     ```json
@@ -403,12 +392,12 @@ Aggregated analytical views for reporting and analysis.
 
 #### 3. `patient_api_view`
 
-* **Description**: A denormalized view likely intended for a patient-focused API, combining key metrics and top diagnoses.
-* **Transformation**: This seems to be a combination or further aggregation of `member_year_metrics` and `top_diagnoses_by_member`. The sampled files in validation results (`patient_metrics.parquet`, `patient_diagnoses.parquet`) suggest it might be stored as separate components or joined on demand. `patient_metrics` mirrors `member_year_metrics` closely, while `patient_diagnoses` mirrors `top_diagnoses_by_member`. The `create_patient_api_view` function in `create_analytics.py` likely performs this combination/selection.
-* **Total Files**: 4 (3 sampled)
-* **Row Count**: 1,289,267 (across sampled files)
-* **Schema**: (Consists of components)
-  * **Metrics Component** (from `patient_metrics.parquet`):
+* **Description**: A denormalized view optimized for patient-centric API access, combining annual metrics and top diagnoses.
+* **Transformation Source**: Gold `member_year_metrics`, `top_diagnoses_by_member`.
+* **Transformation Logic**: Combines data from `member_year_metrics` and `top_diagnoses_by_member`, potentially filtering or selecting specific columns needed for the API endpoint. The structure suggests separate components for metrics and diagnoses are persisted.
+* **Partitioning**: `year` (observed for constituent files `patient_metrics.parquet` and `patient_diagnoses.parquet`)
+* **Schema**: (Composed of metrics and diagnoses components)
+  * **Metrics Component**:
     * `bene_id`: String
     * `year`: Int32
     * `total_allowed`: Decimal(38, 2)
@@ -417,7 +406,7 @@ Aggregated analytical views for reporting and analysis.
     * `outpatient_visits`: UInt32
     * `rx_fills`: UInt32
     * `unique_providers`: UInt32
-  * **Diagnoses Component** (from `patient_diagnoses.parquet`):
+  * **Diagnoses Component**:
     * `bene_id`: String
     * `year`: Int32
     * `diagnosis_code`: String
