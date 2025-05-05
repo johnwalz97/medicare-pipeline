@@ -1,10 +1,10 @@
 # Medicare Data Pipeline Documentation
 
-This document details the Medicare data pipeline, covering its structure, transformations, and data characteristics across the Bronze, Silver, and Gold layers. Information is sourced from `validation_results.json` and analysis of the transformation logic in `src/medicare_pipeline/`.
+This document details the Medicare data pipeline, covering its structure, transformations, and data characteristics across the Bronze, Silver, and Gold layers.
 
 ## Pipeline Overview
 
-The pipeline processes Medicare claims data through three standard layers: Bronze, Silver, and Gold.
+The pipeline processes Medicare claims data through three standard layers: Bronze, Silver, and Gold. There is also a `raw` layer that just stores the raw data as it is downloaded from the CMS server.
 
 1. **Bronze Layer**: Stores the raw ingested data in Parquet format with minimal alterations. Data is partitioned by `year` and `bene_id_prefix`.
 2. **Silver Layer**: Contains cleaned and dimensionally modeled data derived from the Bronze layer. This layer provides a structured and reliable source for analytics, featuring dimension tables (`dim_beneficiary`, `dim_provider`) and fact tables (`fact_claims`, `fact_claim_diagnoses`, `fact_prescription`). Data is partitioned for query optimization.
@@ -14,7 +14,7 @@ The pipeline processes Medicare claims data through three standard layers: Bronz
 
 ## Bronze Layer
 
-The Bronze layer holds the initial, raw data ingested from source systems.
+The Bronze layer holds the the data that is converted from the raw CSVs that are downloaded from CMS.
 
 **Total Tables**: 5
 **Total Rows**: 134,929
