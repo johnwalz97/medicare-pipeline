@@ -206,20 +206,6 @@ For handling new or updated claims data:
    - For small changes: Apply incremental updates
    - For large changes: Rebuild affected partitions
 
-### Schema Evolution
-
-As healthcare data standards evolve (e.g., ICD-9 to ICD-10 transition):
-
-1. **Versioning Strategy**
-   - Track schema version in table metadata
-   - Maintain backward compatibility by keeping core fields unchanged
-   - Document changes in a schema registry
-
-2. **Implementation Approach**
-   - Add new columns as nullable with default values
-   - Use view overlays to present consistent interfaces
-   - Create schema migration tools for major changes
-
 ## Scaling Strategy (DO NOT IMPLEMENT)
 
 To handle 10x data volume (12GB → 120GB):
