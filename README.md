@@ -2,7 +2,7 @@
 
 This project implements a data pipeline to analyze Medicare claims data from the CMS DE-SynPUF dataset, providing insights into member-level healthcare utilization and spending patterns.
 
-See the [DESIGN.md](./DESIGN.md) for detailed design decisions.
+See the [DESIGN.md](./DESIGN.md) for detailed design decisions and the [DATA README.md](./data/README.md) for detailed documentation for the datasets that will live in `./data` once the pipeline has completed.
 
 ## Prerequisites
 
