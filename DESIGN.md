@@ -21,16 +21,16 @@ Each file contains multiple diagnosis codes, procedure codes, and provider ident
 ### Beneficiary
 
 ```plain
-DESYNPUF_ID           - Beneficiary ID (PK)
-BENE_BIRTH_DT         - Birth date
-BENE_SEX_IDENT_CD     - Sex (1=Male, 2=Female)
-BENE_RACE_CD          - Race code
-SP_STATE_CODE         - State code
-MEDREIMB_IP           - IP Medicare reimbursement amount
-BENRES_IP             - IP beneficiary responsibility
-PPPYMT_IP             - IP third-party payments
-MEDREIMB_OP, BENRES_OP, PPPYMT_OP - Outpatient amounts
-MEDREIMB_CAR, BENRES_CAR, PPPYMT_CAR - Carrier amounts
+DESYNPUF_ID                            - Beneficiary ID (PK)
+BENE_BIRTH_DT                          - Birth date
+BENE_SEX_IDENT_CD                      - Sex (1=Male, 2=Female)
+BENE_RACE_CD                           - Race code
+SP_STATE_CODE                          - State code
+MEDREIMB_IP                            - IP Medicare reimbursement amount
+BENRES_IP                              - IP beneficiary responsibility
+PPPYMT_IP                              - IP third-party payments
+MEDREIMB_OP, BENRES_OP, PPPYMT_OP      - Outpatient amounts
+MEDREIMB_CAR, BENRES_CAR, PPPYMT_CAR   - Carrier amounts
 ```
 
 ### Claims (Inpatient/Outpatient/Carrier)
@@ -187,31 +187,49 @@ Two key materialized views accelerate API queries:
 
 ## Incremental Processing (DO NOT IMPLEMENT)
 
-### Strategy: Metadata-Based Change Detection
+### Strategy: Batch-Based Incremental Loading
 
-For handling new or updated claims data:
+For efficiently handling new claims data:
 
-1. **Track Data Lineage**
-   - Store file checksums and processing timestamps in a metadata table
-   - Compare checksums to identify changed files
+1. **Track Processed Batches**
+   - Maintain a control table of processed file batches
+   - Use batch_id, timestamp, and status for tracking
+   - Avoid reprocessing already ingested data
 
-2. **Update Logic by Entity Type**
-   - **New beneficiaries**: Insert into dim_beneficiary
-   - **Updated beneficiaries**: Update dim_beneficiary using natural key (DESYNPUF_ID + year)
-   - **New claims**: Append to fact tables
-   - **Updated claims**: Identify by CLM_ID and update with merge operation
+2. **Update Strategy by Entity**
+   - **Beneficiary data**: Append new records, use `MERGE` operations for updates
+   - **Claims data**: Primarily append-only; new claims added to existing partitions
+   - **Derived dimensions**: Rebuild affected dimension tables (like dim_provider) from updated claims data
 
-3. **View Maintenance**
-   - Incrementally update materialized views based on changed data
-   - For small changes: Apply incremental updates
-   - For large changes: Rebuild affected partitions
+3. **Delta Propagation**
+   - Identify affected partitions based on new data distribution
+   - Only rebuild silver layer objects for affected year/bene_id_prefix combinations
+   - Only refresh gold analytics views that contain affected patients/years
+
+### Implementation Approach
+
+The pipeline would process incremental loads as follows:
+
+1. Register new data batches and mark as "processing"
+2. Load new data into bronze layer with same partitioning
+3. Identify which silver partitions need rebuilding based on the bronze changes
+4. Execute targeted transformation only for affected partitions
+5. Update gold analytics views only for affected beneficiaries
+6. Mark batches as "processed" upon successful completion
+
+This approach is efficient because:
+
+- Only processes new data rather than full refreshes
+- Maintains partition alignment across bronze/silver/gold layers
+- Minimizes query impact during processing
+- Scales well as data volumes grow
 
 ## Scaling Strategy (DO NOT IMPLEMENT)
 
 To handle 10x data volume (12GB → 120GB):
 
 1. **Distributed Processing**
-   - Implement Spark-based processing to distribute work
+   - Implement Ray-based processing to distribute work
    - Process partitions independently and in parallel
    - Leverage dynamic resource allocation based on partition size
 
@@ -224,6 +242,18 @@ To handle 10x data volume (12GB → 120GB):
    - Selective column projection to minimize I/O
    - Predicate pushdown for filtering early in query execution
    - Cache frequently accessed aggregates
+
+### System Architecture Evolution
+
+At 10x scale, the architecture would evolve to:
+
+1. Separate compute and storage with cloud object storage (S3/ADLS)
+2. Implement a multi-node Ray cluster scaled based on workload
+3. Maintain partition-aware data access from API nodes
+4. Add a caching layer for frequently accessed patient records
+5. Implement cross-partition query optimization for population-level analytics
+
+This scaling approach provides a clear growth path without requiring fundamental architectural changes, protecting the initial development investment while supporting future expansion.
 
 ## API Implementation
 
