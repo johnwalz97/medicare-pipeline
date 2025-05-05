@@ -1,0 +1,45 @@
+[project]
+name = "medicare-claims-analysis"
+version = "0.1.0"
+description = "Medicare claims data analysis pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyarrow>=14.0.1",
+    "polars>=0.20.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.6.0",
+    "requests>=2.32.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+    "httpx>=0.26.0",     # For FastAPI testing
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/medicare_pipeline", "src/api"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
