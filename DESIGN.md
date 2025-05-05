@@ -20,7 +20,7 @@ Each file contains multiple diagnosis codes, procedure codes, and provider ident
 
 ### Beneficiary
 
-```
+```plain
 DESYNPUF_ID           - Beneficiary ID (PK)
 BENE_BIRTH_DT         - Birth date
 BENE_SEX_IDENT_CD     - Sex (1=Male, 2=Female)
@@ -35,7 +35,7 @@ MEDREIMB_CAR, BENRES_CAR, PPPYMT_CAR - Carrier amounts
 
 ### Claims (Inpatient/Outpatient/Carrier)
 
-```
+```plain
 DESYNPUF_ID           - Beneficiary ID (FK)
 CLM_ID                - Claim ID (PK)
 CLM_FROM_DT           - Claim start date
@@ -47,7 +47,7 @@ ICD9_DGNS_CD_1...10   - Diagnosis codes
 
 ### Prescription Events
 
-```
+```plain
 DESYNPUF_ID           - Beneficiary ID (FK)
 PDE_ID                - Prescription event ID (PK)
 SRVC_DT               - Service date
@@ -122,7 +122,7 @@ Two key transformations enhance query performance:
 
 1. **Diagnosis Normalization**: Transform diagnosis codes from "wide" format (columns 1-10) to "long" format:
 
-   ```
+   ```plain
    # Input format (simplified)
    | claim_id | icd9_dgns_cd_1 | icd9_dgns_cd_2 | payment |
    |----------|----------------|----------------|---------|
@@ -255,7 +255,7 @@ The FastAPI endpoint (GET /patient/{bene_id}?year=YYYY) leverages the data model
 
 ## Complete Data Flow Diagram
 
-```
+```plain
 ┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
 │             │    │              │    │             │    │             │
 │  Raw CSVs   │───►│ Bronze Layer │───►│ Silver Layer│───►│  Gold Layer │
