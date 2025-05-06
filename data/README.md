@@ -14,7 +14,7 @@ The pipeline processes Medicare claims data through three standard layers: Bronz
 
 See the [data lineage diagram](./data_lineage.md) for a visual representation of how data flows through the pipeline. Screenshot of the digaram below:
 
-![Data Lineage Diagram](./data_lineage.md)
+![Data Lineage Diagram](./data_lineage.png)
 
 ---
 
