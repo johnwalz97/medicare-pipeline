@@ -10,6 +10,12 @@ The pipeline processes Medicare claims data through three standard layers: Bronz
 2. **Silver Layer**: Contains cleaned and dimensionally modeled data derived from the Bronze layer. This layer provides a structured and reliable source for analytics, featuring dimension tables (`dim_beneficiary`, `dim_provider`) and fact tables (`fact_claims`, `fact_claim_diagnoses`, `fact_prescription`). Data is partitioned for query optimization.
 3. **Gold Layer**: Consists of aggregated analytical views built upon the Silver layer, designed for specific business intelligence and reporting requirements.
 
+### Detailed Lineage Diagram
+
+See the [data lineage diagram](./data_lineage.md) for a visual representation of how data flows through the pipeline. Screenshot of the digaram below:
+
+![Data Lineage Diagram](./data_lineage.md)
+
 ---
 
 ## Bronze Layer
