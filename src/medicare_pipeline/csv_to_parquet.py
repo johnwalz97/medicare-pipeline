@@ -245,7 +245,7 @@ class CSVToParquetConverter:
             if col in df.columns:
                 missing_count = df.filter(pl.col(col).is_null()).height
                 missing_stats[col] = (
-                    f"{missing_count} ({(missing_count/total_rows)*100:.2f}%)"
+                    f"{missing_count} ({(missing_count / total_rows) * 100:.2f}%)"
                 )
 
         # Log validation results

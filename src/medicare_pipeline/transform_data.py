@@ -117,7 +117,7 @@ class DataTransformer:
         files = self._get_files_by_type("beneficiary")
         if not files:
             logger.error("No beneficiary files found!")
-            return
+            raise ValueError("No beneficiary files found!")
 
         # Read and combine all beneficiary files
         dfs = []
@@ -127,86 +127,83 @@ class DataTransformer:
             dfs.append(df)
 
         # Combine all dataframes
-        if dfs:
-            df = pl.concat(dfs)
+        df = pl.concat(dfs)
 
-            # Rename columns for consistency
-            df = df.rename(
-                {
-                    "DESYNPUF_ID": "bene_id",
-                    "BENE_SEX_IDENT_CD": "gender",
-                    "BENE_RACE_CD": "race",
-                    "SP_STATE_CODE": "state",
-                    "BENE_BIRTH_DT": "birth_date",
-                    "BENE_DEATH_DT": "death_date",
-                    "MEDREIMB_IP": "ip_medicare_payment",
-                    "BENRES_IP": "ip_beneficiary_payment",
-                    "PPPYMT_IP": "ip_third_party_payment",
-                    "MEDREIMB_OP": "op_medicare_payment",
-                    "BENRES_OP": "op_beneficiary_payment",
-                    "PPPYMT_OP": "op_third_party_payment",
-                    "MEDREIMB_CAR": "car_medicare_payment",
-                    "BENRES_CAR": "car_beneficiary_payment",
-                    "PPPYMT_CAR": "car_third_party_payment",
-                }
-            )
+        # Rename columns for consistency
+        df = df.rename(
+            {
+                "DESYNPUF_ID": "bene_id",
+                "BENE_SEX_IDENT_CD": "gender",
+                "BENE_RACE_CD": "race",
+                "SP_STATE_CODE": "state",
+                "BENE_BIRTH_DT": "birth_date",
+                "BENE_DEATH_DT": "death_date",
+                "MEDREIMB_IP": "ip_medicare_payment",
+                "BENRES_IP": "ip_beneficiary_payment",
+                "PPPYMT_IP": "ip_third_party_payment",
+                "MEDREIMB_OP": "op_medicare_payment",
+                "BENRES_OP": "op_beneficiary_payment",
+                "PPPYMT_OP": "op_third_party_payment",
+                "MEDREIMB_CAR": "car_medicare_payment",
+                "BENRES_CAR": "car_beneficiary_payment",
+                "PPPYMT_CAR": "car_third_party_payment",
+            }
+        )
 
-            # Add total payment columns
-            df = df.with_columns(
-                [
-                    (
-                        pl.col("ip_medicare_payment")
-                        + pl.col("op_medicare_payment")
-                        + pl.col("car_medicare_payment")
-                    ).alias("total_medicare_payment"),
-                    (
-                        pl.col("ip_beneficiary_payment")
-                        + pl.col("op_beneficiary_payment")
-                        + pl.col("car_beneficiary_payment")
-                    ).alias("total_beneficiary_payment"),
-                    (
-                        pl.col("ip_third_party_payment")
-                        + pl.col("op_third_party_payment")
-                        + pl.col("car_third_party_payment")
-                    ).alias("total_third_party_payment"),
-                ]
-            )
+        # Add total payment columns
+        df = df.with_columns(
+            [
+                (
+                    pl.col("ip_medicare_payment")
+                    + pl.col("op_medicare_payment")
+                    + pl.col("car_medicare_payment")
+                ).alias("total_medicare_payment"),
+                (
+                    pl.col("ip_beneficiary_payment")
+                    + pl.col("op_beneficiary_payment")
+                    + pl.col("car_beneficiary_payment")
+                ).alias("total_beneficiary_payment"),
+                (
+                    pl.col("ip_third_party_payment")
+                    + pl.col("op_third_party_payment")
+                    + pl.col("car_third_party_payment")
+                ).alias("total_third_party_payment"),
+            ]
+        )
 
-            # Add total allowed amount (all payments combined)
-            df = df.with_columns(
-                [
-                    (
-                        pl.col("total_medicare_payment")
-                        + pl.col("total_beneficiary_payment")
-                        + pl.col("total_third_party_payment")
-                    ).alias("total_allowed")
-                ]
-            )
+        # Add total allowed amount (all payments combined)
+        df = df.with_columns(
+            [
+                (
+                    pl.col("total_medicare_payment")
+                    + pl.col("total_beneficiary_payment")
+                    + pl.col("total_third_party_payment")
+                ).alias("total_allowed")
+            ]
+        )
 
-            # Add total paid (Medicare + beneficiary)
-            df = df.with_columns(
-                [
-                    (
-                        pl.col("total_medicare_payment")
-                        + pl.col("total_beneficiary_payment")
-                    ).alias("total_paid")
-                ]
-            )
+        # Add total paid (Medicare + beneficiary)
+        df = df.with_columns(
+            [
+                (
+                    pl.col("total_medicare_payment")
+                    + pl.col("total_beneficiary_payment")
+                ).alias("total_paid")
+            ]
+        )
 
-            # Write to parquet partitioned by year
-            output_path = self.silver_dir / "dim_beneficiary"
-            output_path.mkdir(parents=True, exist_ok=True)
+        # Write to parquet partitioned by year
+        output_path = self.silver_dir / "dim_beneficiary"
+        output_path.mkdir(parents=True, exist_ok=True)
 
-            df.write_parquet(
-                output_path / "dim_beneficiary.parquet",
-                compression="zstd",
-                statistics=True,
-                use_pyarrow=True,
-            )
+        df.write_parquet(
+            output_path / "dim_beneficiary.parquet",
+            compression="zstd",
+            statistics=True,
+            use_pyarrow=True,
+        )
 
-            logger.info(f"Successfully created dim_beneficiary with {len(df)} rows")
-        else:
-            logger.error("No data found for dim_beneficiary")
+        logger.info(f"Successfully created dim_beneficiary with {len(df)} rows")
 
     def create_fact_claims(self):
         """
@@ -310,13 +307,14 @@ class DataTransformer:
                                 pl.Decimal(10, 2)
                             )
 
+                if payment_expr:
+                    payment_col = payment_expr.alias("medicare_payment")
+
                 # If none of the payment columns exist, use 0
-                if payment_expr is None:
+                else:
                     payment_col = (
                         pl.lit(0).cast(pl.Decimal(10, 2)).alias("medicare_payment")
                     )
-                else:
-                    payment_col = payment_expr.alias("medicare_payment")
 
             # Third-party payment calculation with proper decimal casting
             if "CLM_OP_PRVDR_PMT_AMT" in df.columns:
@@ -503,44 +501,46 @@ class DataTransformer:
                             f"Error processing diagnosis column {diag_col}: {e}"
                         )
 
-        # Combine all diagnosis dataframes
-        if diagnosis_dfs:
-            try:
-                logger.info(f"Combining {len(diagnosis_dfs)} diagnosis dataframes")
-                combined_diagnoses = pl.concat(diagnosis_dfs)
-                logger.info(
-                    f"Combined diagnosis dataframe shape: {combined_diagnoses.shape}"
-                )
-
-                # Write to parquet partitioned by year and bene_id_prefix
-                for year_val, year_df in combined_diagnoses.partition_by(
-                    "year", as_dict=True
-                ).items():
-                    for prefix, prefix_df in year_df.partition_by(
-                        "bene_id_prefix", as_dict=True
-                    ).items():
-                        output_path = (
-                            self.silver_dir
-                            / "fact_claim_diagnoses"
-                            / f"year={year_val}"
-                            / f"bene_id_prefix={prefix}"
-                        )
-                        output_path.mkdir(parents=True, exist_ok=True)
-
-                        prefix_df.write_parquet(
-                            output_path / "fact_claim_diagnoses.parquet",
-                            compression="zstd",
-                            statistics=True,
-                            use_pyarrow=True,
-                        )
-
-                logger.info(
-                    f"Successfully created fact_claim_diagnoses with {len(combined_diagnoses)} rows"
-                )
-            except Exception as e:
-                logger.error(f"Error creating fact_claim_diagnoses: {e}")
-        else:
+        if not diagnosis_dfs:
             logger.error("No data found for fact_claim_diagnoses")
+            raise ValueError("No data found for fact_claim_diagnoses")
+
+        # Combine all diagnosis dataframes
+        try:
+            logger.info(f"Combining {len(diagnosis_dfs)} diagnosis dataframes")
+            combined_diagnoses = pl.concat(diagnosis_dfs)
+            logger.info(
+                f"Combined diagnosis dataframe shape: {combined_diagnoses.shape}"
+            )
+
+            # Write to parquet partitioned by year and bene_id_prefix
+            for year_val, year_df in combined_diagnoses.partition_by(
+                "year", as_dict=True
+            ).items():
+                for prefix, prefix_df in year_df.partition_by(
+                    "bene_id_prefix", as_dict=True
+                ).items():
+                    output_path = (
+                        self.silver_dir
+                        / "fact_claim_diagnoses"
+                        / f"year={year_val}"
+                        / f"bene_id_prefix={prefix}"
+                    )
+                    output_path.mkdir(parents=True, exist_ok=True)
+
+                    prefix_df.write_parquet(
+                        output_path / "fact_claim_diagnoses.parquet",
+                        compression="zstd",
+                        statistics=True,
+                        use_pyarrow=True,
+                    )
+
+            logger.info(
+                f"Successfully created fact_claim_diagnoses with {len(combined_diagnoses)} rows"
+            )
+        except Exception as e:
+            logger.error(f"Error creating fact_claim_diagnoses: {e}")
+            raise e
 
     def create_fact_prescription(self):
         """
@@ -656,54 +656,55 @@ class DataTransformer:
 
             except Exception as e:
                 logger.error(f"Error processing PDE file {file}: {e}")
+                raise e
+
+        if not pde_dfs:
+            logger.error("No data found for fact_prescription")
+            raise ValueError("No data found for fact_prescription")
 
         # Combine all prescription dataframes
-        if pde_dfs:
-            try:
-                logger.info(f"Combining {len(pde_dfs)} PDE dataframes")
-                combined_prescriptions = pl.concat(pde_dfs)
-                logger.info(
-                    f"Combined PDE dataframe shape: {combined_prescriptions.shape}"
-                )
+        try:
+            logger.info(f"Combining {len(pde_dfs)} PDE dataframes")
+            combined_prescriptions = pl.concat(pde_dfs)
+            logger.info(f"Combined PDE dataframe shape: {combined_prescriptions.shape}")
 
-                # Calculate medicare payment (total cost - patient payment)
-                combined_prescriptions = combined_prescriptions.with_columns(
-                    [
-                        (pl.col("total_cost") - pl.col("patient_payment")).alias(
-                            "medicare_payment"
-                        )
-                    ]
-                )
+            # Calculate medicare payment (total cost - patient payment)
+            combined_prescriptions = combined_prescriptions.with_columns(
+                [
+                    (pl.col("total_cost") - pl.col("patient_payment")).alias(
+                        "medicare_payment"
+                    )
+                ]
+            )
 
-                # Write to parquet partitioned by year and bene_id_prefix
-                for year_val, year_df in combined_prescriptions.partition_by(
-                    "year", as_dict=True
+            # Write to parquet partitioned by year and bene_id_prefix
+            for year_val, year_df in combined_prescriptions.partition_by(
+                "year", as_dict=True
+            ).items():
+                for prefix, prefix_df in year_df.partition_by(
+                    "bene_id_prefix", as_dict=True
                 ).items():
-                    for prefix, prefix_df in year_df.partition_by(
-                        "bene_id_prefix", as_dict=True
-                    ).items():
-                        output_path = (
-                            self.silver_dir
-                            / "fact_prescription"
-                            / f"year={year_val}"
-                            / f"bene_id_prefix={prefix}"
-                        )
-                        output_path.mkdir(parents=True, exist_ok=True)
+                    output_path = (
+                        self.silver_dir
+                        / "fact_prescription"
+                        / f"year={year_val}"
+                        / f"bene_id_prefix={prefix}"
+                    )
+                    output_path.mkdir(parents=True, exist_ok=True)
 
-                        prefix_df.write_parquet(
-                            output_path / "fact_prescription.parquet",
-                            compression="zstd",
-                            statistics=True,
-                            use_pyarrow=True,
-                        )
+                    prefix_df.write_parquet(
+                        output_path / "fact_prescription.parquet",
+                        compression="zstd",
+                        statistics=True,
+                        use_pyarrow=True,
+                    )
 
-                logger.info(
-                    f"Successfully created fact_prescription with {len(combined_prescriptions)} rows"
-                )
-            except Exception as e:
-                logger.error(f"Error creating fact_prescription: {e}")
-        else:
-            logger.error("No data found for fact_prescription")
+            logger.info(
+                f"Successfully created fact_prescription with {len(combined_prescriptions)} rows"
+            )
+        except Exception as e:
+            logger.error(f"Error creating fact_prescription: {e}")
+            raise e
 
     def create_dim_provider(self):
         """
@@ -814,35 +815,36 @@ class DataTransformer:
                 logger.warning(f"No provider column found in PDE file: {file}")
 
         # Combine and deduplicate provider information
-        if provider_dfs:
-            combined_providers = pl.concat(provider_dfs)
-
-            # Deduplicate providers and keep the most common state
-            unique_providers = combined_providers.group_by("provider_id").agg(
-                [pl.col("state").mode().first().alias("state")]
-            )
-
-            # Add provider type (placeholder - this would use additional reference data in production)
-            unique_providers = unique_providers.with_columns(
-                [pl.lit("Unknown").alias("provider_type")]
-            )
-
-            # Write to parquet
-            output_path = self.silver_dir / "dim_provider"
-            output_path.mkdir(parents=True, exist_ok=True)
-
-            unique_providers.write_parquet(
-                output_path / "dim_provider.parquet",
-                compression="zstd",
-                statistics=True,
-                use_pyarrow=True,
-            )
-
-            logger.info(
-                f"Successfully created dim_provider with {len(unique_providers)} rows"
-            )
-        else:
+        if not provider_dfs:
             logger.error("No data found for dim_provider")
+            raise ValueError("No data found for dim_provider")
+
+        combined_providers = pl.concat(provider_dfs)
+
+        # Deduplicate providers and keep the most common state
+        unique_providers = combined_providers.group_by("provider_id").agg(
+            [pl.col("state").mode().first().alias("state")]
+        )
+
+        # Add provider type (placeholder - this would use additional reference data in production)
+        unique_providers = unique_providers.with_columns(
+            [pl.lit("Unknown").alias("provider_type")]
+        )
+
+        # Write to parquet
+        output_path = self.silver_dir / "dim_provider"
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        unique_providers.write_parquet(
+            output_path / "dim_provider.parquet",
+            compression="zstd",
+            statistics=True,
+            use_pyarrow=True,
+        )
+
+        logger.info(
+            f"Successfully created dim_provider with {len(unique_providers)} rows"
+        )
 
     def transform_all(self):
         """

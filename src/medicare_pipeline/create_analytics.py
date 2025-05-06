@@ -61,7 +61,7 @@ class AnalyticsBuilder:
 
         if not files:
             logger.warning(f"No files found for {table_name}")
-            return None
+            raise ValueError(f"No files found for {table_name}")
 
         dfs = []
         for file in files:
@@ -75,7 +75,7 @@ class AnalyticsBuilder:
 
         if not dfs:
             logger.error(f"No valid data found for {table_name}")
-            return None
+            raise ValueError(f"No valid data found for {table_name}")
 
         return pl.concat(dfs)
 
@@ -95,8 +95,6 @@ class AnalyticsBuilder:
 
         # Start with beneficiary data for demographics and total payments
         beneficiary_df = self._read_complete_table("dim_beneficiary")
-        if beneficiary_df is None:
-            return
 
         # Read claims data for utilization counts
         claims_df = self._read_complete_table("fact_claims")
@@ -116,115 +114,93 @@ class AnalyticsBuilder:
         )
 
         # Count inpatient stays and outpatient visits
-        if claims_df is not None:
-            # Count distinct claims by type
-            claim_counts = claims_df.group_by(["bene_id", "year", "claim_type"]).agg(
-                [pl.n_unique("claim_id").alias("claim_count")]
-            )
+        claim_counts = claims_df.group_by(["bene_id", "year", "claim_type"]).agg(
+            [pl.n_unique("claim_id").alias("claim_count")]
+        )
 
-            # Pivot the results to get one column per claim type
-            claim_counts_wide = claim_counts.pivot(
-                index=["bene_id", "year"], columns="claim_type", values="claim_count"
-            ).with_columns(
+        # Pivot the results to get one column per claim type
+        claim_counts_wide = claim_counts.pivot(
+            index=["bene_id", "year"], columns="claim_type", values="claim_count"
+        ).with_columns(
+            [
+                pl.col("inpatient").fill_null(0).alias("inpatient_stays"),
+                pl.col("outpatient").fill_null(0).alias("outpatient_visits"),
+                pl.col("carrier").fill_null(0).alias("carrier_claims"),
+            ]
+        )
+
+        # Count unique providers per member/year
+        provider_counts = (
+            claims_df.filter(
+                pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
+            )
+            .group_by(["bene_id", "year"])
+            .agg([pl.n_unique("provider_id").alias("unique_providers")])
+        )
+
+        # Join claim counts to the metrics
+        metrics_df = metrics_df.join(
+            claim_counts_wide.select(
                 [
-                    pl.col("inpatient").fill_null(0).alias("inpatient_stays"),
-                    pl.col("outpatient").fill_null(0).alias("outpatient_visits"),
-                    pl.col("carrier").fill_null(0).alias("carrier_claims"),
+                    "bene_id",
+                    "year",
+                    "inpatient_stays",
+                    "outpatient_visits",
+                    "carrier_claims",
                 ]
-            )
+            ),
+            on=["bene_id", "year"],
+            how="left",
+        )
 
-            # Count unique providers per member/year
-            provider_counts = (
-                claims_df.filter(
-                    pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
-                )
-                .group_by(["bene_id", "year"])
-                .agg([pl.n_unique("provider_id").alias("unique_providers")])
-            )
+        # Fill missing values with zeros
+        metrics_df = metrics_df.with_columns(
+            [
+                pl.col("inpatient_stays").fill_null(0),
+                pl.col("outpatient_visits").fill_null(0),
+                pl.col("carrier_claims").fill_null(0),
+            ]
+        )
 
-            # Join claim counts to the metrics
-            metrics_df = metrics_df.join(
-                claim_counts_wide.select(
-                    [
-                        "bene_id",
-                        "year",
-                        "inpatient_stays",
-                        "outpatient_visits",
-                        "carrier_claims",
-                    ]
-                ),
-                on=["bene_id", "year"],
-                how="left",
-            )
-
-            # Fill missing values with zeros
-            metrics_df = metrics_df.with_columns(
-                [
-                    pl.col("inpatient_stays").fill_null(0),
-                    pl.col("outpatient_visits").fill_null(0),
-                    pl.col("carrier_claims").fill_null(0),
-                ]
-            )
-
-            # Join provider counts
-            metrics_df = metrics_df.join(
-                provider_counts, on=["bene_id", "year"], how="left"
-            ).with_columns([pl.col("unique_providers").fill_null(0)])
-        else:
-            # Add placeholder columns if claims data is missing
-            metrics_df = metrics_df.with_columns(
-                [
-                    pl.lit(0).alias("inpatient_stays"),
-                    pl.lit(0).alias("outpatient_visits"),
-                    pl.lit(0).alias("carrier_claims"),
-                    pl.lit(0).alias("unique_providers"),
-                ]
-            )
+        # Join provider counts
+        metrics_df = metrics_df.join(
+            provider_counts, on=["bene_id", "year"], how="left"
+        ).with_columns([pl.col("unique_providers").fill_null(0)])
 
         # Count prescription fills
-        if prescription_df is not None:
-            rx_counts = prescription_df.group_by(["bene_id", "year"]).agg(
-                [pl.n_unique("prescription_id").alias("rx_fills")]
-            )
+        rx_counts = prescription_df.group_by(["bene_id", "year"]).agg(
+            [pl.n_unique("prescription_id").alias("rx_fills")]
+        )
 
-            # Join rx counts
-            metrics_df = metrics_df.join(
-                rx_counts, on=["bene_id", "year"], how="left"
-            ).with_columns([pl.col("rx_fills").fill_null(0)])
-        else:
-            # Add placeholder column if prescription data is missing
-            metrics_df = metrics_df.with_columns([pl.lit(0).alias("rx_fills")])
+        # Join rx counts
+        metrics_df = metrics_df.join(
+            rx_counts, on=["bene_id", "year"], how="left"
+        ).with_columns([pl.col("rx_fills").fill_null(0)])
 
         # Add prescription provider counts to unique_providers if needed
-        if prescription_df is not None and claims_df is not None:
-            # Get prescription providers
-            rx_providers = prescription_df.filter(
-                pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
-            ).select(["bene_id", "year", "provider_id"])
+        rx_providers = prescription_df.filter(
+            pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
+        ).select(["bene_id", "year", "provider_id"])
 
-            # Get claim providers
-            claim_providers = claims_df.filter(
-                pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
-            ).select(["bene_id", "year", "provider_id"])
+        # Get claim providers
+        claim_providers = claims_df.filter(
+            pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
+        ).select(["bene_id", "year", "provider_id"])
 
-            # Combine and count unique providers
-            all_providers = pl.concat([rx_providers, claim_providers])
-            all_provider_counts = all_providers.group_by(["bene_id", "year"]).agg(
-                [pl.n_unique("provider_id").alias("all_unique_providers")]
+        # Combine and count unique providers
+        all_providers = pl.concat([rx_providers, claim_providers])
+        all_provider_counts = all_providers.group_by(["bene_id", "year"]).agg(
+            [pl.n_unique("provider_id").alias("all_unique_providers")]
+        )
+
+        # Update the metrics with combined provider counts
+        metrics_df = (
+            metrics_df.join(all_provider_counts, on=["bene_id", "year"], how="left")
+            .with_columns(
+                [pl.col("all_unique_providers").fill_null(0).alias("unique_providers")]
             )
-
-            # Update the metrics with combined provider counts
-            metrics_df = (
-                metrics_df.join(all_provider_counts, on=["bene_id", "year"], how="left")
-                .with_columns(
-                    [
-                        pl.col("all_unique_providers")
-                        .fill_null(0)
-                        .alias("unique_providers")
-                    ]
-                )
-                .drop("all_unique_providers")
-            )
+            .drop("all_unique_providers")
+        )
 
         # Write to parquet partitioned by year
         output_path = self.gold_dir / "member_year_metrics"
@@ -257,8 +233,6 @@ class AnalyticsBuilder:
 
         # Read diagnosis data
         diagnosis_df = self._read_complete_table("fact_claim_diagnoses")
-        if diagnosis_df is None:
-            return
 
         # Aggregate diagnosis spend by member/year/diagnosis
         diagnosis_spend = diagnosis_df.group_by(
@@ -312,21 +286,10 @@ class AnalyticsBuilder:
         logger.info("Creating patient_api_view")
 
         # Read metrics and diagnoses from the gold layer
-        metrics_files = self._get_gold_files("member_year_metrics")
-        diagnoses_files = self._get_gold_files("top_diagnoses_by_member")
-
-        if not metrics_files or not diagnoses_files:
-            logger.error("Missing required data for patient_api_view")
-            return
-
-        # Read metrics and diagnoses from the gold layer
         metrics_df = self._read_complete_table("member_year_metrics", from_gold=True)
         diagnoses_df = self._read_complete_table(
             "top_diagnoses_by_member", from_gold=True
         )
-
-        if metrics_df is None or diagnoses_df is None:
-            return
 
         # Select only needed columns from metrics
         metrics_slim = metrics_df.select(

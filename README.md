@@ -166,7 +166,7 @@ Health check endpoint to verify API is running.
 You can use the included test client to query the API:
 
 ```bash
-python -m src.api.test_client.py --bene_id F900242EC7459BD5 --year 2009 --pretty
+python -m src.api.test_client F900242EC7459BD5 --year 2009 --pretty
 ```
 
 ### Hosted API Documentation
