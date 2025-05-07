@@ -307,14 +307,13 @@ class DataTransformer:
                                 pl.Decimal(10, 2)
                             )
 
-                if payment_expr:
-                    payment_col = payment_expr.alias("medicare_payment")
-
-                # If none of the payment columns exist, use 0
-                else:
+                # If no payment columns exist or payment_expr is None, use 0
+                if payment_expr is None:
                     payment_col = (
                         pl.lit(0).cast(pl.Decimal(10, 2)).alias("medicare_payment")
                     )
+                else:
+                    payment_col = payment_expr.alias("medicare_payment")
 
             # Third-party payment calculation with proper decimal casting
             if "CLM_OP_PRVDR_PMT_AMT" in df.columns:
