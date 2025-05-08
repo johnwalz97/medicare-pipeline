@@ -238,53 +238,30 @@ The FastAPI endpoint (GET /patient/{bene_id}?year=YYYY) leverages the data model
 
 ## Strategies for Scaling
 
-### Incremental Processing: Streaming-Based Incremental Updates
+### Incremental Processing: Streaming-Driven, Micro-Batch Updates
 
-For efficiently handling new claims data:
+To keep our gold tables fresh without rebuilding entire partitions:
 
-1. **Track Changed Records**
-   - Maintain a changelog tracking the latest records modified/added
-   - Include record key, timestamp, and modification type
-   - Enable precise identification of only changed data
+1. **Capture New Claims**
+   - **Bronze ingestion** writes weekly raw Parquet files into `year + bene_id_prefix` partitions
+   - Streaming job grabs new files and incrementally loads them into Silver tables (`fact_claims`, `fact_claim_diagnoses`, etc.)
 
-2. **Streaming Update Flow**
-   - **Source to Bronze**: Track file-level changes and process only new/modified files
-   - **Bronze to Silver**: Stream only changed records using the year/bene_id_prefix partitioning
-   - **Silver to Gold**: Stream individual record changes from silver to gold without requiring full partition rebuilds
+2. **Detect Affected Keys**
+   - As each new record is processed, we derive its **member-year** key (`bene_id`, `year`)
+   - Store this key list to track exactly which beneficiary-year aggregates need updating
 
-3. **Delta Propagation**
-   - Extract modified records from affected silver partitions
-   - Apply targeted row-level updates to gold tables using merge operations
-   - Maintain summary tables with incremental aggregation techniques
+3. **Compute Delta Aggregates**
+   - For affected member-years, compute incremental metrics like `SUM(payment)` and `COUNT(DISTINCT provider)`
+   - Update running totals per diagnosis code and recompute top-5 lists using stateful operations
+   - Generate small "delta" result sets containing only the changes
 
-#### Implementation Approach
+4. **Upsert Into Gold Tables**
+   - Use MERGE operations to apply each delta batch:
 
-The streaming pipeline processes updates efficiently:
+#### Benefits
 
-1. Detect changed records in silver layer
-2. Stream changes through CDC system
-3. Update gold tables with targeted operations:
-   - Update metrics for affected beneficiaries
-   - Recalculate rankings only when needed
-   - Refresh only changed patient records
-4. Use merge operations instead of partition rebuilds
-
-Benefits:
-
-- Eliminates full partition rebuilds
-- Resolves silver/gold partitioning mismatch
-- Enables near real-time analytics updates
-- Scales efficiently with incremental data
-
-#### Performance Considerations
-
-This approach is optimal when:
-
-- Changes affect few beneficiaries
-- Analytics need quick refreshes
-- Partition rebuilds would be costly
-
-For initial loads, batch processing remains more efficient.
+- **Zero full-table scans**: Only read and write partitions and rows that actually changed
+- **Near-real-time freshness**: Micro-batches run every few minutes as new files arrive
 
 ## Scaling Up: Key Optimization for 10x Scale
 
