@@ -121,20 +121,40 @@ Get patient data for a specific beneficiary and year.
 
 ```json
 {
-  "bene_id": "200284",
+  "bene_id": "F900242EC7459BD5",
   "year": 2009,
-  "total_allowed": 13250.43,
-  "total_paid": 11206.07,
-  "inpatient_stays": 1,
-  "outpatient_visits": 3,
-  "rx_fills": 12,
-  "unique_providers": 4,
+  "total_allowed": 2650.0,
+  "total_paid": 2070.0,
+  "inpatient_stays": 0,
+  "outpatient_visits": 0,
+  "rx_fills": 0,
+  "unique_providers": 58,
   "top_diagnoses": [
-    {"code": "250.00", "description": "Diabetes mellitus", "spend": 2423.50},
-    {"code": "401.9", "description": "Hypertension NOS", "spend": 1528.33},
-    {"code": "272.4", "description": "Hyperlipidemia NEC/NOS", "spend": 982.12},
-    {"code": "786.50", "description": "Chest pain NOS", "spend": 750.00},
-    {"code": "414.00", "description": "Coronary atherosclerosis", "spend": 522.12}
+    {
+      "code": "2334",
+      "description": "Carcinoma in situ of prostate",
+      "spend": 1010.0
+    },
+    {
+      "code": "2382",
+      "description": "Neoplasm of uncertain behavior of skin",
+      "spend": 670.0
+    },
+    {
+      "code": "V1046",
+      "description": "Personal history of malignant neoplasm of prostate",
+      "spend": 650.0
+    },
+    {
+      "code": "59970",
+      "description": "Hematuria, unspecified",
+      "spend": 550.0
+    },
+    {
+      "code": "4142",
+      "description": "Chronic total occlusion of coronary artery",
+      "spend": 550.0
+    }
   ]
 }
 ```
