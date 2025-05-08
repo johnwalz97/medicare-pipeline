@@ -59,19 +59,11 @@ class AnalyticsBuilder:
         else:
             files = self._get_silver_files(table_name)
 
-        if not files:
-            logger.warning(f"No files found for {table_name}")
-            raise ValueError(f"No files found for {table_name}")
-
         dfs = []
         for file in files:
             logger.info(f"Reading {file}")
-            try:
-                df = pl.read_parquet(file)
-                dfs.append(df)
-            except Exception as e:
-                logger.error(f"Error reading {file}: {e}")
-                continue
+            df = pl.read_parquet(file)
+            dfs.append(df)
 
         if not dfs:
             logger.error(f"No valid data found for {table_name}")
@@ -107,7 +99,7 @@ class AnalyticsBuilder:
                 pl.col("year"),
                 pl.col("total_allowed"),
                 pl.col("total_paid"),
-                pl.col("gender"),
+                pl.col("sex"),
                 pl.col("race"),
                 pl.col("state"),
             ]
@@ -177,30 +169,20 @@ class AnalyticsBuilder:
             rx_counts, on=["bene_id", "year"], how="left"
         ).with_columns([pl.col("rx_fills").fill_null(0)])
 
-        # Add prescription provider counts to unique_providers if needed
-        rx_providers = prescription_df.filter(
-            pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
-        ).select(["bene_id", "year", "provider_id"])
-
         # Get claim providers
         claim_providers = claims_df.filter(
             pl.col("provider_id").is_not_null() & (pl.col("provider_id") != "")
         ).select(["bene_id", "year", "provider_id"])
 
-        # Combine and count unique providers
-        all_providers = pl.concat([rx_providers, claim_providers])
-        all_provider_counts = all_providers.group_by(["bene_id", "year"]).agg(
-            [pl.n_unique("provider_id").alias("all_unique_providers")]
+        # Count unique providers from claims
+        provider_counts = claim_providers.group_by(["bene_id", "year"]).agg(
+            [pl.n_unique("provider_id").alias("unique_providers")]
         )
 
-        # Update the metrics with combined provider counts
-        metrics_df = (
-            metrics_df.join(all_provider_counts, on=["bene_id", "year"], how="left")
-            .with_columns(
-                [pl.col("all_unique_providers").fill_null(0).alias("unique_providers")]
-            )
-            .drop("all_unique_providers")
-        )
+        # Update the metrics with provider counts
+        metrics_df = metrics_df.join(
+            provider_counts, on=["bene_id", "year"], how="left"
+        ).with_columns([pl.col("unique_providers").fill_null(0)])
 
         # Write to parquet partitioned by year
         output_path = self.gold_dir / "member_year_metrics"
@@ -231,7 +213,6 @@ class AnalyticsBuilder:
         """
         logger.info("Creating top_diagnoses_by_member view")
 
-        # Read diagnosis data
         diagnosis_df = self._read_complete_table("fact_claim_diagnoses")
 
         # Aggregate diagnosis spend by member/year/diagnosis

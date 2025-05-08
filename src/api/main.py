@@ -57,80 +57,67 @@ def load_patient_data(bene_id: str, year: int) -> Optional[dict]:
     Returns:
         Dictionary with combined patient data or None if not found
     """
-    try:
-        # Direct path to the metrics file without patient_api_view folder structure
-        patient_metrics_path = (
-            PATIENT_API_VIEW_PATH / f"year=({year},)" / "patient_metrics.parquet"
-        )
+    # Direct path to the metrics file without patient_api_view folder structure
+    patient_metrics_path = (
+        PATIENT_API_VIEW_PATH / f"year=({year},)" / "patient_metrics.parquet"
+    )
 
-        # Check if metrics file exists
-        if not patient_metrics_path.exists():
-            logger.warning(f"Patient metrics file does not exist for year {year}")
-            return None
-
-        # Load the entire metrics file
-        logger.info(f"Loading metrics from {patient_metrics_path}")
-        metrics_df = pl.read_parquet(patient_metrics_path)
-
-        # Filter for the specific patient
-        logger.info(f"Filtering for patient {bene_id}")
-        filtered_df = metrics_df.filter(pl.col("bene_id") == bene_id)
-
-        if len(filtered_df) == 0:
-            logger.warning(f"Patient {bene_id} not found in metrics for year {year}")
-            return None
-
-        # Convert to dictionary
-        patient_data = filtered_df.row(0, named=True)
-        logger.info(f"Found patient data: {patient_data}")
-
-        # Check for diagnoses file
-        diagnoses_path = (
-            PATIENT_API_VIEW_PATH / f"year=({year},)" / "patient_diagnoses.parquet"
-        )
-        diagnoses = []
-
-        if diagnoses_path.exists():
-            try:
-                # Load and filter diagnoses
-                diagnoses_df = pl.read_parquet(diagnoses_path)
-                filtered_diagnoses = diagnoses_df.filter(pl.col("bene_id") == bene_id)
-
-                if len(filtered_diagnoses) > 0:
-                    # Sort by payment amount if rank not available
-                    if "diagnosis_rank" in filtered_diagnoses.columns:
-                        sorted_diagnoses = filtered_diagnoses.sort(
-                            "diagnosis_rank"
-                        ).head(5)
-                    else:
-                        sorted_diagnoses = filtered_diagnoses.sort(
-                            "diagnosis_payment", descending=True
-                        ).head(5)
-
-                    # Extract diagnosis data
-                    for row in sorted_diagnoses.iter_rows(named=True):
-                        diagnoses.append(
-                            {
-                                "code": row.get("diagnosis_code", ""),
-                                "description": row.get("diagnosis_description", None),
-                                "spend": float(row.get("diagnosis_payment", 0)),
-                            }
-                        )
-            except Exception as e:
-                logger.error(f"Error processing diagnoses: {str(e)}")
-
-        # Add diagnoses to patient data
-        patient_data = dict(patient_data)
-        patient_data["diagnoses"] = diagnoses
-
-        return patient_data
-
-    except Exception as e:
-        logger.error(f"Error loading patient data: {str(e)}")
-        import traceback
-
-        logger.error(traceback.format_exc())
+    # Check if metrics file exists
+    if not patient_metrics_path.exists():
+        logger.warning(f"Patient metrics file does not exist for year {year}")
         return None
+
+    # Load the entire metrics file
+    logger.info(f"Loading metrics from {patient_metrics_path}")
+    metrics_df = pl.read_parquet(patient_metrics_path)
+
+    # Filter for the specific patient
+    logger.info(f"Filtering for patient {bene_id}")
+    filtered_df = metrics_df.filter(pl.col("bene_id") == bene_id)
+
+    if len(filtered_df) == 0:
+        logger.warning(f"Patient {bene_id} not found in metrics for year {year}")
+        return None
+
+    # Convert to dictionary
+    patient_data = filtered_df.row(0, named=True)
+    logger.info(f"Found patient data: {patient_data}")
+
+    # Check for diagnoses file
+    diagnoses_path = (
+        PATIENT_API_VIEW_PATH / f"year=({year},)" / "patient_diagnoses.parquet"
+    )
+    diagnoses = []
+
+    if diagnoses_path.exists():
+        # Load and filter diagnoses
+        diagnoses_df = pl.read_parquet(diagnoses_path)
+        filtered_diagnoses = diagnoses_df.filter(pl.col("bene_id") == bene_id)
+
+        if len(filtered_diagnoses) > 0:
+            # Sort by payment amount if rank not available
+            if "diagnosis_rank" in filtered_diagnoses.columns:
+                sorted_diagnoses = filtered_diagnoses.sort("diagnosis_rank").head(5)
+            else:
+                sorted_diagnoses = filtered_diagnoses.sort(
+                    "diagnosis_payment", descending=True
+                ).head(5)
+
+            # Extract diagnosis data
+            for row in sorted_diagnoses.iter_rows(named=True):
+                diagnoses.append(
+                    {
+                        "code": row.get("diagnosis_code", ""),
+                        "description": row.get("diagnosis_description", None),
+                        "spend": float(row.get("diagnosis_payment", 0)),
+                    }
+                )
+
+    # Add diagnoses to patient data
+    patient_data = dict(patient_data)
+    patient_data["diagnoses"] = diagnoses
+
+    return patient_data
 
 
 @app.get("/")

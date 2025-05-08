@@ -16,7 +16,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("medicare_pipeline.log"),
+        logging.FileHandler("medicare_pipeline.log"),  # TODO: make this work
     ],
 )
 logger = logging.getLogger(__name__)
@@ -49,36 +49,24 @@ def setup_directories(base_dir: str = ".") -> dict:
     return dirs
 
 
-def run_download(raw_dir: Path, skip_if_exists: bool = False) -> bool:
+def run_download(raw_dir: Path) -> bool:
     """
     Download raw data files.
 
     Args:
         raw_dir: Directory to store raw files
-        skip_if_exists: Skip download if files already exist
 
     Returns:
         True if successful
     """
     logger.info("=== Starting data download phase ===")
 
-    # Check if files already exist
-    if skip_if_exists and list(raw_dir.glob("*.csv")):
-        logger.info("Raw CSV files already exist. Skipping download.")
-        return True
-
-    # Download and extract files
     start_time = time.time()
     downloader = DataDownloader(str(raw_dir))
-    success = downloader.download_and_extract_all()
+    downloader.download_and_extract_all()
     end_time = time.time()
 
-    if success:
-        logger.info(f"Data download completed in {end_time - start_time:.2f} seconds")
-    else:
-        logger.error("Data download failed")
-
-    return success
+    logger.info(f"Data download completed in {end_time - start_time:.2f} seconds")
 
 
 def run_conversion(raw_dir: Path, bronze_dir: Path) -> bool:
@@ -94,17 +82,12 @@ def run_conversion(raw_dir: Path, bronze_dir: Path) -> bool:
     """
     logger.info("=== Starting CSV to Parquet conversion phase ===")
 
-    # Convert files
     start_time = time.time()
-    try:
-        converter = CSVToParquetConverter(str(raw_dir), str(bronze_dir))
-        converter.process_directory()
-        end_time = time.time()
-        logger.info(f"Conversion completed in {end_time - start_time:.2f} seconds")
-        return True
-    except Exception as e:
-        logger.error(f"Conversion failed: {str(e)}")
-        return False
+    converter = CSVToParquetConverter(str(raw_dir), str(bronze_dir))
+    converter.process_directory()
+    end_time = time.time()
+
+    logger.info(f"Conversion completed in {end_time - start_time:.2f} seconds")
 
 
 def run_transformation(bronze_dir: Path, silver_dir: Path) -> bool:
@@ -120,17 +103,12 @@ def run_transformation(bronze_dir: Path, silver_dir: Path) -> bool:
     """
     logger.info("=== Starting data transformation phase ===")
 
-    # Transform data
     start_time = time.time()
-    try:
-        transformer = DataTransformer(str(bronze_dir), str(silver_dir))
-        transformer.transform_all()
-        end_time = time.time()
-        logger.info(f"Transformation completed in {end_time - start_time:.2f} seconds")
-        return True
-    except Exception as e:
-        logger.error(f"Transformation failed: {str(e)}")
-        return False
+    transformer = DataTransformer(str(bronze_dir), str(silver_dir))
+    transformer.transform_all()
+    end_time = time.time()
+
+    logger.info(f"Transformation completed in {end_time - start_time:.2f} seconds")
 
 
 def run_analytics(silver_dir: Path, gold_dir: Path) -> bool:
@@ -146,24 +124,15 @@ def run_analytics(silver_dir: Path, gold_dir: Path) -> bool:
     """
     logger.info("=== Starting analytics creation phase ===")
 
-    # Create analytics views
     start_time = time.time()
-    try:
-        builder = AnalyticsBuilder(str(silver_dir), str(gold_dir))
-        builder.create_all_analytics()
-        end_time = time.time()
-        logger.info(
-            f"Analytics creation completed in {end_time - start_time:.2f} seconds"
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Analytics creation failed: {str(e)}")
-        return False
+    builder = AnalyticsBuilder(str(silver_dir), str(gold_dir))
+    builder.create_all_analytics()
+    end_time = time.time()
+
+    logger.info(f"Analytics creation completed in {end_time - start_time:.2f} seconds")
 
 
-def run_validation(
-    base_dir: Path, output_file: str = "validation_results.json"
-) -> bool:
+def run_validation(base_dir: Path) -> bool:
     """
     Validate the data pipeline output.
 
@@ -176,41 +145,24 @@ def run_validation(
     """
     logger.info("=== Starting data validation phase ===")
 
-    # Validate data
     start_time = time.time()
-    try:
-        validator = DataValidator(str(base_dir))
-        validator.validate_all()
-        validator.print_summary()
-        validator.save_results(output_file)
+    validator = DataValidator(str(base_dir))
+    validator.validate_all()
+    validator.print_summary()
+    validator.save_results()
+    all_valid = all(info["status"] == "valid" for info in validator.summary.values())
+    end_time = time.time()
 
-        # Check if all layers are valid
-        all_valid = all(
-            info["status"] == "valid" for info in validator.summary.values()
-        )
+    logger.info(f"Data validation completed in {end_time - start_time:.2f} seconds")
 
-        end_time = time.time()
-        logger.info(f"Data validation completed in {end_time - start_time:.2f} seconds")
+    if not all_valid:
+        logger.warning("Validation FAILED - see validation_results.json for details")
+        raise ValueError("Validation FAILED")
 
-        if all_valid:
-            logger.info("Validation PASSED")
-            return True
-        else:
-            logger.warning(
-                "Validation FAILED - see validation_results.json for details"
-            )
-            return False
-    except Exception as e:
-        logger.error(f"Validation failed: {str(e)}")
-        return False
+    logger.info("Validation PASSED")
 
 
-def run_pipeline(
-    base_dir: str,
-    steps: list,
-    skip_download_if_exists: bool = False,
-    validation_output: str = "validation_results.json",
-) -> bool:
+def run_pipeline(base_dir: str, steps: list) -> bool:
     """
     Run the complete data pipeline or specific steps.
 
@@ -228,42 +180,19 @@ def run_pipeline(
     # Set up directories
     dirs = setup_directories(base_dir)
 
-    # Track overall success
-    all_success = True
-
     # Run selected steps
     if "download" in steps:
-        if not run_download(dirs["raw"], skip_download_if_exists):
-            logger.error("Download step failed. Continuing with pipeline...")
-            all_success = False
-
+        run_download(dirs["raw"])
     if "convert" in steps:
-        if not run_conversion(dirs["raw"], dirs["bronze"]):
-            logger.error("Conversion step failed. Continuing with pipeline...")
-            all_success = False
-
+        run_conversion(dirs["raw"], dirs["bronze"])
     if "transform" in steps:
-        if not run_transformation(dirs["bronze"], dirs["silver"]):
-            logger.error("Transformation step failed. Continuing with pipeline...")
-            all_success = False
-
+        run_transformation(dirs["bronze"], dirs["silver"])
     if "analytics" in steps:
-        if not run_analytics(dirs["silver"], dirs["gold"]):
-            logger.error("Analytics step failed. Continuing with pipeline...")
-            all_success = False
-
+        run_analytics(dirs["silver"], dirs["gold"])
     if "validate" in steps:
-        if not run_validation(Path(base_dir) / "data", validation_output):
-            logger.error("Validation step failed.")
-            all_success = False
+        run_validation(Path(base_dir) / "data")
 
-    # Report final status
-    if all_success:
-        logger.info("Pipeline completed successfully!")
-    else:
-        logger.error("Pipeline completed with errors. See log for details.")
-
-    return all_success
+    logger.info("Pipeline completed successfully!")
 
 
 def main():
@@ -275,16 +204,6 @@ def main():
         default="all",
         help="Comma-separated list of steps to run: download,convert,transform,analytics,validate",
     )
-    parser.add_argument(
-        "--skip-download-if-exists",
-        action="store_true",
-        help="Skip download if files already exist",
-    )
-    parser.add_argument(
-        "--validation-output",
-        default="validation_results.json",
-        help="Path to save validation results",
-    )
 
     args = parser.parse_args()
 
@@ -295,9 +214,7 @@ def main():
         steps = args.steps.split(",")
 
     # Run pipeline
-    success = run_pipeline(
-        args.base_dir, steps, args.skip_download_if_exists, args.validation_output
-    )
+    success = run_pipeline(args.base_dir, steps)
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)

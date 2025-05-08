@@ -21,15 +21,10 @@ def query_patient(
     """
     url = f"{base_url}/patient/{bene_id}?year={year}"
 
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error querying API: {str(e)}")
-        if hasattr(e.response, "text"):
-            print(f"Response: {e.response.text}")
-        return None
+    response = requests.get(url)
+    response.raise_for_status()
+
+    return response.json()
 
 
 def main():

@@ -78,12 +78,6 @@ TOT_RX_CST_AMT        - Total prescription cost
 1. **Year partitioning**: Almost all queries are year-specific, aligning with the member/year level requirement. File pruning is highly effective with only 3 partitions.
 2. **Bene_id_prefix**: Creates balanced distributions (~256 partitions per year) while enabling efficient filtering for member-specific queries.
 
-**Alternatives Considered**:
-
-1. **Month partitioning**: Too granular (36 partitions) for a 3-year dataset, resulting in small file problem.
-2. **No secondary partition**: Would make member-specific queries scan all data within a year partition.
-3. **Full bene_id partitioning**: Would create too many small files (~60,000 per year).
-
 ## Data Modeling
 
 ### Modeling Approach: Simplified Star Schema
@@ -142,6 +136,12 @@ Two key transformations enhance query performance:
    - Carrier: PRF_PHYSN_NPI_1...13
    - Prescription: PRVDR_ID
 
+3. **Payment Calculation for Carrier Claims**: For carrier claims, payment calculation requires special handling:
+   - Some carrier claims don't have a claim-level payment amount (CLM_PMT_AMT)
+   - When CLM_PMT_AMT is missing, the implementation sums line-level payment amounts (LINE_NCH_PMT_AMT_1...13)
+   - Similar logic applies for third-party payments (LINE_BENE_PRMRY_PYR_PD_AMT_1...13)
+   - This ensures accurate payment calculation for all claim types
+
 ### Performance Optimization: Materialized Views
 
 Two key materialized views accelerate API queries:
@@ -149,6 +149,7 @@ Two key materialized views accelerate API queries:
 1. **member_year_metrics**
 
    ```sql
+   -- Note: This is pseudocode representing the Polars dataframe operations in the implementation
    SELECT 
      b.DESYNPUF_ID as bene_id,
      b.year,
@@ -162,6 +163,7 @@ Two key materialized views accelerate API queries:
 2. **top_diagnoses_by_member**
 
    ```sql
+   -- Note: This is pseudocode representing the Polars dataframe operations in the implementation
    SELECT 
      bene_id,
      year,
@@ -185,89 +187,29 @@ Two key materialized views accelerate API queries:
    WHERE diagnosis_rank <= 5
    ```
 
-## Incremental Processing (DO NOT IMPLEMENT)
+3. **patient_api_view**
 
-### Strategy: Batch-Based Incremental Loading
+   A combined view optimized for the patient API endpoint that joins member metrics with top diagnoses for efficient API responses. This view separates the data into two components:
 
-For efficiently handling new claims data:
+   - **patient_metrics**: Contains key metrics by patient and year
+   - **patient_diagnoses**: Contains top diagnoses by patient and year
 
-1. **Track Processed Batches**
-   - Maintain a control table of processed file batches
-   - Use batch_id, timestamp, and status for tracking
-   - Avoid reprocessing already ingested data
-
-2. **Update Strategy by Entity**
-   - **Beneficiary data**: Append new records, use `MERGE` operations for updates
-   - **Claims data**: Primarily append-only; new claims added to existing partitions
-   - **Derived dimensions**: Rebuild affected dimension tables (like dim_provider) from updated claims data
-
-3. **Delta Propagation**
-   - Identify affected partitions based on new data distribution
-   - Only rebuild silver layer objects for affected year/bene_id_prefix combinations
-   - Only refresh gold analytics views that contain affected patients/years
-
-### Implementation Approach
-
-The pipeline would process incremental loads as follows:
-
-1. Register new data batches and mark as "processing"
-2. Load new data into bronze layer with same partitioning
-3. Identify which silver partitions need rebuilding based on the bronze changes
-4. Execute targeted transformation only for affected partitions
-5. Update gold analytics views only for affected beneficiaries
-6. Mark batches as "processed" upon successful completion
-
-This approach is efficient because:
-
-- Only processes new data rather than full refreshes
-- Maintains partition alignment across bronze/silver/gold layers
-- Minimizes query impact during processing
-- Scales well as data volumes grow
-
-## Scaling Strategy (DO NOT IMPLEMENT)
-
-To handle 10x data volume (12GB → 120GB):
-
-1. **Distributed Processing**
-   - Implement Ray-based processing to distribute work
-   - Process partitions independently and in parallel
-   - Leverage dynamic resource allocation based on partition size
-
-2. **Storage Optimizations**
-   - **Z-ordering** on beneficiary_id within partitions
-   - **Right-sized files**: Target 100-500MB files (vs. many small files)
-   - **Bloom filters** for high-cardinality columns like CLM_ID
-
-3. **Query Optimization**
-   - Selective column projection to minimize I/O
-   - Predicate pushdown for filtering early in query execution
-   - Cache frequently accessed aggregates
-
-### System Architecture Evolution
-
-At 10x scale, the architecture would evolve to:
-
-1. Separate compute and storage with cloud object storage (S3/ADLS)
-2. Implement a multi-node Ray cluster scaled based on workload
-3. Maintain partition-aware data access from API nodes
-4. Add a caching layer for frequently accessed patient records
-5. Implement cross-partition query optimization for population-level analytics
-
-This scaling approach provides a clear growth path without requiring fundamental architectural changes, protecting the initial development investment while supporting future expansion.
+   This structure allows for efficient retrieval of patient data without unnecessary joins at query time.
 
 ## API Implementation
 
 The FastAPI endpoint (GET /patient/{bene_id}?year=YYYY) leverages the data model for efficient retrieval:
 
 1. **Data Access Pattern**
-   - Query pre-calculated member_year_metrics view
-   - Join with top_diagnoses_by_member
+   - Query pre-calculated patient_api_view (which contains patient_metrics and patient_diagnoses)
+   - Retrieves data directly from partitioned files based on bene_id_prefix
    - Format as JSON response
 
 2. **Performance Considerations**
    - Redis caching for frequent requests
    - Partitioned data access based on bene_id_prefix
    - Request-level security and validation
+   - Separation of metrics and diagnoses data minimizes data reads for specific queries
 
 ## Complete Data Flow Diagram
 
@@ -293,3 +235,59 @@ The FastAPI endpoint (GET /patient/{bene_id}?year=YYYY) leverages the data model
                                                          │                 │
                                                          └─────────────────┘
 ```
+
+## Strategies for Scaling
+
+### Incremental Processing: Streaming-Based Incremental Updates
+
+For efficiently handling new claims data:
+
+1. **Track Changed Records**
+   - Maintain a changelog tracking the latest records modified/added
+   - Include record key, timestamp, and modification type
+   - Enable precise identification of only changed data
+
+2. **Streaming Update Flow**
+   - **Source to Bronze**: Track file-level changes and process only new/modified files
+   - **Bronze to Silver**: Stream only changed records using the year/bene_id_prefix partitioning
+   - **Silver to Gold**: Stream individual record changes from silver to gold without requiring full partition rebuilds
+
+3. **Delta Propagation**
+   - Extract modified records from affected silver partitions
+   - Apply targeted row-level updates to gold tables using merge operations
+   - Maintain summary tables with incremental aggregation techniques
+
+#### Implementation Approach
+
+The streaming pipeline processes updates efficiently:
+
+1. Detect changed records in silver layer
+2. Stream changes through CDC system
+3. Update gold tables with targeted operations:
+   - Update metrics for affected beneficiaries
+   - Recalculate rankings only when needed
+   - Refresh only changed patient records
+4. Use merge operations instead of partition rebuilds
+
+Benefits:
+
+- Eliminates full partition rebuilds
+- Resolves silver/gold partitioning mismatch
+- Enables near real-time analytics updates
+- Scales efficiently with incremental data
+
+#### Performance Considerations
+
+This approach is optimal when:
+
+- Changes affect few beneficiaries
+- Analytics need quick refreshes
+- Partition rebuilds would be costly
+
+For initial loads, batch processing remains more efficient.
+
+## Scaling Up: Key Optimization for 10x Scale
+
+The single most impactful optimization for 10x scale would be **distributed processing with Ray or Spark**. Ray offers the simplest integration path with the current Polars implementation.
+
+Converting our sequential partition processing to distributed execution would dramatically improve performance:

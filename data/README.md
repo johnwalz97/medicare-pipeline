@@ -108,7 +108,7 @@ The Bronze layer holds the the data that is converted from the raw CSVs that are
   - `DESYNPUF_ID`: String
   - `BENE_BIRTH_DT`: Date
   - `BENE_DEATH_DT`: Date
-  - `BENE_SEX_IDENT_CD`: Categorical (Gender)
+  - `BENE_SEX_IDENT_CD`: Categorical
   - `BENE_RACE_CD`: Categorical (Race)
   - `BENE_ESRD_IND`: Categorical (End-Stage Renal Disease Indicator)
   - `SP_STATE_CODE`: Categorical (State Code)
@@ -208,7 +208,7 @@ The Silver layer provides a cleaned, integrated, and dimensionally modeled view 
   - `bene_id`: String
   - `birth_date`: Date
   - `death_date`: Date
-  - `gender`: Categorical
+  - `sex`: Categorical
   - `race`: Categorical
   - `BENE_ESRD_IND`: Categorical
   - `state`: Categorical
@@ -239,7 +239,7 @@ The Silver layer provides a cleaned, integrated, and dimensionally modeled view 
 
     ```json
     {
-      "bene_id": "F900242EC7459BD5", "birth_date": "1938-06-01", "death_date": null, "gender": "2", "race": "1", "BENE_ESRD_IND": "0", "state": "33", ..., "total_allowed": 1880.0, "total_paid": 1880.0
+      "bene_id": "F900242EC7459BD5", "birth_date": "1938-06-01", "death_date": null, "sex": "male", "race": "White", "BENE_ESRD_IND": "0", "state": "AL", ..., "total_allowed": 1880.0, "total_paid": 1880.0
     }
     ```
 
@@ -247,16 +247,14 @@ The Silver layer provides a cleaned, integrated, and dimensionally modeled view 
 
 - **Description**: Dimension table containing unique provider identifiers.
 - **Transformation Source**: Bronze `inpatient`, `outpatient`, `carrier`, `pde`.
-- **Transformation Logic**: Extracts provider IDs from various columns across source tables (`PRVDR_NUM`, NPI columns, `PRVDR_ID`, `PRSCRBR_ID`). Deduplicates based on `provider_id`. State information is associated where available; otherwise, it's 'Unknown'. Provider type is currently 'Unknown'.
+- **Transformation Logic**: Extracts provider IDs from various columns across source tables (`PRVDR_NUM`, NPI columns, `PRVDR_ID`, `PRSCRBR_ID`). Deduplicates based on `provider_id`.
 - **Partitioning**: Not partitioned (written as a single file).
 - **Schema**: (3 columns)
   - `provider_id`: String
-  - `state`: String
-  - `provider_type`: String (Currently "Unknown")
 - **Sample Row**:
 
     ```json
-    { "provider_id": "2765173173", "state": "Unknown", "provider_type": "Unknown" }
+    { "provider_id": "2765173173" }
     ```
 
 #### 3. `fact_claims`
@@ -359,7 +357,7 @@ The Gold layer provides pre-aggregated, business-ready analytical views.
   - `year`: Int32
   - `total_allowed`: Decimal(38, 2)
   - `total_paid`: Decimal(38, 2)
-  - `gender`: Categorical
+  - `sex`: Categorical
   - `race`: Categorical
   - `state`: Categorical
   - `inpatient_stays`: UInt32 (Aggregated)
@@ -371,7 +369,7 @@ The Gold layer provides pre-aggregated, business-ready analytical views.
 
     ```json
     {
-      "bene_id": "F900242EC7459BD5", "year": 2009, "total_allowed": 2650.0, "total_paid": 2580.0, "gender": "2", "race": "1", "state": "33", "inpatient_stays": 0, "outpatient_visits": 0, "carrier_claims": 61, "unique_providers": 1, "rx_fills": 0
+      "bene_id": "F900242EC7459BD5", "year": 2009, "total_allowed": 2650.0, "total_paid": 2580.0, "sex": "male", "race": "White", "state": "AL", "inpatient_stays": 0, "outpatient_visits": 0, "carrier_claims": 61, "unique_providers": 1, "rx_fills": 0
     }
     ```
 

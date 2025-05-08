@@ -169,6 +169,48 @@ You can use the included test client to query the API:
 python -m src.api.test_client F900242EC7459BD5 --year 2009 --pretty
 ```
 
+Should return the following:
+
+```json
+{
+  "bene_id": "F900242EC7459BD5",
+  "year": 2009,
+  "total_allowed": 2650.0,
+  "total_paid": 2070.0,
+  "inpatient_stays": 0,
+  "outpatient_visits": 0,
+  "rx_fills": 0,
+  "unique_providers": 58,
+  "top_diagnoses": [
+    {
+      "code": "2334",
+      "description": "Carcinoma in situ of prostate",
+      "spend": 1010.0
+    },
+    {
+      "code": "2382",
+      "description": "Neoplasm of uncertain behavior of skin",
+      "spend": 670.0
+    },
+    {
+      "code": "V1046",
+      "description": "Personal history of malignant neoplasm of prostate",
+      "spend": 650.0
+    },
+    {
+      "code": "59970",
+      "description": "Hematuria, unspecified",
+      "spend": 550.0
+    },
+    {
+      "code": "4142",
+      "description": "Chronic total occlusion of coronary artery",
+      "spend": 550.0
+    }
+  ]
+}
+```
+
 ### Hosted API Documentation
 
 Once the API is running, you can access the Swagger UI documentation at:

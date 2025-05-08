@@ -48,38 +48,26 @@ class DataDownloader:
         Args:
             url: URL to download from
             filename: Name to save the file as
-
-        Returns:
-            bool: True if download was successful
         """
         output_path = self.output_dir / filename
 
-        try:
-            logger.info(f"Downloading {filename}...")
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
+        logger.info(f"Downloading {filename}...")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
 
-            total_size = int(response.headers.get("content-length", 0))
-            block_size = 8192
-            downloaded = 0
+        total_size = int(response.headers.get("content-length", 0))
+        block_size = 8192
+        downloaded = 0
 
-            with open(output_path, "wb") as f:
-                for data in response.iter_content(block_size):
-                    downloaded += len(data)
-                    f.write(data)
+        with open(output_path, "wb") as f:
+            for data in response.iter_content(block_size):
+                downloaded += len(data)
+                f.write(data)
 
-                    # Log progress
-                    if total_size > 0:
-                        percent = (downloaded / total_size) * 100
-                        logger.info(f"Downloaded {percent:.1f}% of {filename}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error downloading {filename}: {str(e)}")
-            if output_path.exists():
-                output_path.unlink()
-            return False
+                # Log progress
+                if total_size > 0:
+                    percent = (downloaded / total_size) * 100
+                    logger.info(f"Downloaded {percent:.1f}% of {filename}")
 
     def extract_zip(self, zip_path: Path) -> bool:
         """
@@ -87,56 +75,31 @@ class DataDownloader:
 
         Args:
             zip_path: Path to the ZIP file
-
-        Returns:
-            bool: True if extraction was successful
         """
-        try:
-            logger.info(f"Extracting {zip_path.name}...")
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(self.output_dir)
-            return True
-        except Exception as e:
-            logger.error(f"Error extracting {zip_path.name}: {str(e)}")
-            return False
+        logger.info(f"Extracting {zip_path.name}...")
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(self.output_dir)
 
     def download_and_extract_all(self) -> bool:
         """
         Download and extract all files.
-
-        Returns:
-            bool: True if all operations were successful
         """
-        success = True
-
-        # Download all files
         for filename, url in self.file_urls.items():
-            if not self.download_file(url, filename):
-                success = False
-                continue
+            self.download_file(url, filename)
 
-            # Extract the downloaded file
             zip_path = self.output_dir / filename
-            if not self.extract_zip(zip_path):
-                success = False
-                continue
+            self.extract_zip(zip_path)
 
-            # Remove the ZIP file after successful extraction
             zip_path.unlink()
-
-        return success
 
 
 def main():
     """Main entry point for the script."""
     downloader = DataDownloader()
-    success = downloader.download_and_extract_all()
+    downloader.download_and_extract_all()
 
-    if success:
-        logger.info("All files downloaded and extracted successfully.")
-    else:
-        logger.error("Some files failed to download or extract.")
-        exit(1)
+    logger.info("All files downloaded and extracted successfully.")
 
 
 if __name__ == "__main__":

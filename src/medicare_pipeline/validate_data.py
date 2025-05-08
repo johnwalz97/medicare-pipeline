@@ -51,44 +51,40 @@ class DataValidator:
         Returns:
             Dictionary containing file metadata
         """
-        try:
-            # Load the Parquet file
-            df = pl.read_parquet(file_path)
+        # Load the Parquet file
+        df = pl.read_parquet(file_path)
 
-            # Collect basic stats
-            info = {
-                "file_path": str(file_path),
-                "row_count": df.height,
-                "column_count": df.width,
-                "columns": list(df.columns),
-                "schema": {col: str(dtype) for col, dtype in df.schema.items()},
-                "sample_rows": min(2, df.height),
-                "sample": df.head(2).to_dicts() if df.height > 0 else [],
-                "status": "valid",
-            }
+        # Collect basic stats
+        info = {
+            "file_path": str(file_path),
+            "row_count": df.height,
+            "column_count": df.width,
+            "columns": list(df.columns),
+            "schema": {col: str(dtype) for col, dtype in df.schema.items()},
+            "sample_rows": min(2, df.height),
+            "sample": df.head(2).to_dicts() if df.height > 0 else [],
+            "status": "valid",
+        }
 
-            # Check for data quality issues
-            issues = []
+        # Check for data quality issues
+        issues = []
 
-            # Check for empty dataframe
-            if df.height == 0:
-                issues.append("Empty dataframe")
+        # Check for empty dataframe
+        if df.height == 0:
+            issues.append("Empty dataframe")
 
-            # Check for missing values in key columns
-            if (
-                "bene_id" in df.columns
-                and df.filter(pl.col("bene_id").is_null()).height > 0
-            ):
-                issues.append("Missing values in bene_id column")
+        # Check for missing values in key columns
+        if (
+            "bene_id" in df.columns
+            and df.filter(pl.col("bene_id").is_null()).height > 0
+        ):
+            issues.append("Missing values in bene_id column")
 
-            if issues:
-                info["status"] = "warning"
-                info["issues"] = issues
+        if issues:
+            info["status"] = "warning"
+            info["issues"] = issues
 
-            return info
-        except Exception as e:
-            logger.error(f"Error examining {file_path}: {str(e)}")
-            return {"file_path": str(file_path), "status": "error", "error": str(e)}
+        return info
 
     def _validate_layer(self, layer_dir: Path, layer_name: str) -> Dict[str, Any]:
         """

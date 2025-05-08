@@ -11,6 +11,7 @@ dependencies = [
     "uvicorn>=0.27.0",
     "pydantic>=2.6.0",
     "requests>=2.32.3",
+    "icd9cms>=0.2.1",
 ]
 
 [project.optional-dependencies]
