@@ -12,11 +12,15 @@ See the [DESIGN.md](./DESIGN.md) for detailed design decisions and the [DATA REA
 
 ```plain
 .
-├── data/                         # Data directory (not in git)
-│   ├── raw/                      # Original CSV files
-│   ├── bronze/                   # Normalized Parquet files
-│   ├── silver/                   # Dimensional model
-│   └── gold/                     # Analytics views
+├── data/                         # Data directory
+│   ├── raw/                      # Original CSV files (not in git)
+│   ├── bronze/                   # Normalized Parquet files (not in git)
+│   ├── silver/                   # Dimensional model (not in git)
+│   ├── gold/                     # Analytics views (not in git)
+│   ├── data_dictionary.md        # Data dictionary documentation
+│   ├── data_lineage.md           # Data lineage documentation
+│   ├── data_lineage.png          # Visual data lineage diagram
+│   └── README.md                 # readme specific to data folder
 ├── src/                          # Source code
 │   ├── medicare_pipeline/        # Main pipeline package
 │   │   ├── __init__.py
@@ -37,7 +41,6 @@ See the [DESIGN.md](./DESIGN.md) for detailed design decisions and the [DATA REA
 ├── pyproject.toml                # Python dependencies
 ├── uv.lock                       # Dependency lock file
 ├── README.md                     # Project documentation
-├── PROJECT_SUMMARY.md            # Project summary
 └── DESIGN.md                     # Design decisions and rationale
 ```
 
